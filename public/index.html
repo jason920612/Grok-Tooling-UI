@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grok Tooling UI</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <aside class="sidebar">
+        <div class="brand">Grok Tooling UI</div>
+        <p>Grok-like chat, but with planner, tools, source policy, and verifier.</p>
+        <div class="pill">Node + TypeScript</div>
+        <div class="pill">Planner first</div>
+        <div class="pill">Tool traces</div>
+      </aside>
+
+      <section class="chat-shell">
+        <header>
+          <div>
+            <h1>Ask with verification</h1>
+            <p>模型先懷疑、查工具，再回答。</p>
+          </div>
+          <button id="clear">Clear</button>
+        </header>
+
+        <div id="messages" class="messages"></div>
+
+        <form id="composer" class="composer">
+          <textarea id="input" placeholder="輸入問題，例如：這個說法有沒有可能過期？" rows="3"></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+
+    <template id="message-template">
+      <article class="message">
+        <div class="role"></div>
+        <div class="content"></div>
+      </article>
+    </template>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
