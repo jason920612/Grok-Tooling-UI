@@ -409,6 +409,8 @@ Check:
 - Did it cite or imply authority from weak sources?
 - Did it fail to use deterministic tool output?
 - Did it respect the user's client timezone and local time when relative dates matter?
+- For search-backed answers, did it separate official/vendor claims, independent reporting, public discourse, benchmarks, product UX, reliability, and alignment/safety evidence?
+- Do not treat reasoning/capability benchmarks as direct proof of post-training quality, alignment quality, safety reliability, or product UX reliability.
 If the draft is acceptable, return it unchanged under "final".`;
 
   return completeText({
@@ -448,8 +450,9 @@ export async function runConversation(messages: ChatMessage[], clientContext?: C
   if (wantsBuiltInSearch) {
     const searched = await synthesizeWithBuiltInSearch(messages, planner, toolResults, clientContext);
     toolResults.push(searched.toolResult);
-    planner = completeWorkPlan(planner, toolResults, searched.text);
-    return { planner, clientContext, toolResults, draft: searched.text, final: searched.text };
+    const final = await verify(messages, searched.text, planner, toolResults, clientContext);
+    planner = completeWorkPlan(planner, toolResults, final);
+    return { planner, clientContext, toolResults, draft: searched.text, final };
   }
 
   const draft = await synthesize(messages, planner, toolResults, clientContext);
