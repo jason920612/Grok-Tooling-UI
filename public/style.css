@@ -51,6 +51,9 @@ header p { margin: 6px 0 0; color: #a1a1aa; }
 .skill-list li { display: grid; gap: 3px; }
 .skill-list strong { color: #fafafa; }
 .skill-list span { overflow-wrap: anywhere; }
+.skill-sop { margin-top: 6px; }
+.skill-sop summary { color: #93c5fd; font-weight: 600; }
+.skill-sop p, .skill-sop ul { margin-top: 6px; }
 .trace-muted { color: #71717a; }
 .raw-trace { grid-column: 1 / -1; margin-top: 12px; }
 .raw-trace pre { overflow: auto; max-height: 360px; border: 1px solid #3f3f46; border-radius: 10px; padding: 12px; background: #09090b; color: #d4d4d8; }
