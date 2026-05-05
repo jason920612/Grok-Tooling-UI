@@ -19,7 +19,14 @@ const ChatRequestSchema = z.object({
   messages: z.array(z.object({
     role: z.enum(['system', 'user', 'assistant']),
     content: z.string().min(1)
-  })).min(1)
+  })).min(1),
+  client_context: z.object({
+    timezone: z.string().optional(),
+    locale: z.string().optional(),
+    local_time: z.string().optional(),
+    local_time_display: z.string().optional(),
+    utc_offset_minutes: z.number().optional()
+  }).optional()
 });
 
 app.get('/api/health', (_req, res) => {
@@ -29,7 +36,7 @@ app.get('/api/health', (_req, res) => {
 app.post('/api/chat', async (req, res, next) => {
   try {
     const body = ChatRequestSchema.parse(req.body);
-    const result = await runConversation(body.messages);
+    const result = await runConversation(body.messages, body.client_context);
     res.json(result);
   } catch (error) {
     next(error);
