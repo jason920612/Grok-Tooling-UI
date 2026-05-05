@@ -17,7 +17,7 @@ app.use(express.json({ limit: '2mb' }));
 
 const ChatRequestSchema = z.object({
   messages: z.array(z.object({
-    role: z.enum(['system', 'user', 'assistant', 'tool']),
+    role: z.enum(['system', 'user', 'assistant']),
     content: z.string().min(1)
   })).min(1)
 });

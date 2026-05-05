@@ -1,17 +1,130 @@
-import { Parser } from 'expr-eval';
-
 export type ToolResult = {
   tool: string;
   input: unknown;
   output: string;
 };
 
-const parser = new Parser();
+type Token =
+  | { type: 'number'; value: number }
+  | { type: 'operator'; value: '+' | '-' | '*' | '/' | '^' }
+  | { type: 'paren'; value: '(' | ')' };
+
+function tokenize(expression: string): Token[] {
+  const tokens: Token[] = [];
+  let index = 0;
+
+  while (index < expression.length) {
+    const char = expression[index];
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+
+    if (/[0-9.]/.test(char)) {
+      const start = index;
+      index += 1;
+      while (index < expression.length && /[0-9.]/.test(expression[index])) index += 1;
+      const raw = expression.slice(start, index);
+      if (!/^(?:\d+\.?\d*|\.\d+)$/.test(raw)) throw new Error(`Invalid number: ${raw}`);
+      tokens.push({ type: 'number', value: Number(raw) });
+      continue;
+    }
+
+    if (char === '+' || char === '-' || char === '*' || char === '/' || char === '^') {
+      tokens.push({ type: 'operator', value: char });
+      index += 1;
+      continue;
+    }
+
+    if (char === '(' || char === ')') {
+      tokens.push({ type: 'paren', value: char });
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`Unsupported calculator character: ${char}`);
+  }
+
+  return tokens;
+}
+
+function evaluateArithmetic(expression: string) {
+  const tokens = tokenize(expression);
+  let index = 0;
+
+  function peek() {
+    return tokens[index];
+  }
+
+  function matchOperator(operator: Token & { type: 'operator' }) {
+    if (peek()?.type === 'operator' && peek().value === operator.value) {
+      index += 1;
+      return true;
+    }
+    return false;
+  }
+
+  function parseExpression(): number {
+    let value = parseTerm();
+    while (true) {
+      if (matchOperator({ type: 'operator', value: '+' })) value += parseTerm();
+      else if (matchOperator({ type: 'operator', value: '-' })) value -= parseTerm();
+      else return value;
+    }
+  }
+
+  function parseTerm(): number {
+    let value = parsePower();
+    while (true) {
+      if (matchOperator({ type: 'operator', value: '*' })) value *= parsePower();
+      else if (matchOperator({ type: 'operator', value: '/' })) value /= parsePower();
+      else return value;
+    }
+  }
+
+  function parsePower(): number {
+    const value = parseUnary();
+    if (matchOperator({ type: 'operator', value: '^' })) return value ** parsePower();
+    return value;
+  }
+
+  function parseUnary(): number {
+    if (matchOperator({ type: 'operator', value: '+' })) return parseUnary();
+    if (matchOperator({ type: 'operator', value: '-' })) return -parseUnary();
+    return parsePrimary();
+  }
+
+  function parsePrimary(): number {
+    const token = peek();
+    if (!token) throw new Error('Unexpected end of expression');
+
+    if (token.type === 'number') {
+      index += 1;
+      return token.value;
+    }
+
+    if (token.type === 'paren' && token.value === '(') {
+      index += 1;
+      const value = parseExpression();
+      if (peek()?.type !== 'paren' || peek().value !== ')') throw new Error('Missing closing parenthesis');
+      index += 1;
+      return value;
+    }
+
+    throw new Error('Expected number or parenthesized expression');
+  }
+
+  if (tokens.length === 0) throw new Error('Calculator expression is empty');
+  const value = parseExpression();
+  if (index !== tokens.length) throw new Error('Unexpected token after expression');
+  if (!Number.isFinite(value)) throw new Error('Calculator result is not finite');
+  return value;
+}
 
 export async function runTool(name: string, input: unknown): Promise<ToolResult> {
   if (name === 'calculator') {
     const expression = String((input as { expression?: unknown }).expression ?? '');
-    const value = parser.evaluate(expression);
+    const value = evaluateArithmetic(expression);
     return { tool: name, input, output: String(value) };
   }
 
@@ -32,7 +145,16 @@ export async function runTool(name: string, input: unknown): Promise<ToolResult>
     return {
       tool: name,
       input,
-      output: `Search adapter not configured yet. Query requested: ${query}`
+      output: `web_search is handled by xAI built-in server-side tools during synthesis. Query requested: ${query}`
+    };
+  }
+
+  if (name === 'x_search') {
+    const query = String((input as { query?: unknown }).query ?? '');
+    return {
+      tool: name,
+      input,
+      output: `x_search is handled by xAI built-in server-side tools during synthesis. Query requested: ${query}`
     };
   }
 
@@ -54,6 +176,10 @@ export const toolCatalog = [
   },
   {
     name: 'web_search',
-    description: 'Placeholder adapter for external search. Replace this with Tavily, Brave, SerpAPI, or your own search backend.'
+    description: 'Use xAI built-in web_search server-side tool for current web information and primary sources.'
+  },
+  {
+    name: 'x_search',
+    description: 'Use xAI built-in x_search server-side tool for current X posts, xAI/Grok announcements, and public social claims.'
   }
 ] as const;

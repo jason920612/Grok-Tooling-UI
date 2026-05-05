@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { config } from './config.js';
-import { ChatMessage, completeText } from './xai.js';
+import { ChatMessage, completeText, completeTextWithBuiltInSearch } from './xai.js';
 import { runTool, toolCatalog, ToolResult } from './tools.js';
 
 const PlannerSchema = z.object({
@@ -26,6 +26,35 @@ function extractJson(text: string) {
   return text;
 }
 
+function fallbackPlan(messages: ChatMessage[], reason: string): PlannerOutput {
+  const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
+  const asksForCurrentInfo = /最新|目前|現在|跳票|延期|發布|發佈|上市|進度|何時|today|current|latest|version|release|launch|delay|delayed|roadmap|build|grok|xai|elon|musk|fsd/i.test(lastUserMessage);
+
+  return {
+    answer_directly: !asksForCurrentInfo,
+    needs_freshness_check: asksForCurrentInfo,
+    user_claims_to_verify: [],
+    tool_calls: asksForCurrentInfo
+      ? [
+          {
+            tool: 'web_search',
+            input: { query: lastUserMessage }
+          },
+          {
+            tool: 'x_search',
+            input: { query: lastUserMessage }
+          }
+        ]
+      : [],
+    source_policy: asksForCurrentInfo
+      ? ['Use official or primary sources for current-version claims.']
+      : [],
+    answer_constraints: [
+      `Planner fallback used because planner output was not valid JSON: ${reason}`
+    ]
+  };
+}
+
 async function plan(messages: ChatMessage[]): Promise<PlannerOutput> {
   const system = `You are an epistemic planner for a Grok-powered assistant.
 Return JSON only, matching this shape:
@@ -46,16 +75,23 @@ Rules:
 - Treat user claims as fallible; list any premise that affects the answer.
 - X posts, social replies, and prior AI answers are weak evidence.
 - Prefer official docs, primary sources, source documents, deterministic computation, and executable checks.
+- Use both web_search and x_search for questions about xAI, Grok, Elon Musk statements, X posts, release timing, current versions, or launch delays.
 - Keep tool calls minimal and useful.`;
 
-  const raw = await completeText({
-    model: config.plannerModel,
-    system,
-    messages,
-    temperature: 0
-  });
+  try {
+    const raw = await completeText({
+      model: config.plannerModel,
+      system,
+      messages,
+      temperature: 0,
+      jsonMode: true
+    });
 
-  return PlannerSchema.parse(JSON.parse(extractJson(raw)));
+    return PlannerSchema.parse(JSON.parse(extractJson(raw)));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return fallbackPlan(messages, reason);
+  }
 }
 
 async function synthesize(messages: ChatMessage[], planner: PlannerOutput, toolResults: ToolResult[]) {
@@ -77,6 +113,36 @@ Do not claim that a tool verified something unless the tool output supports it.`
     ],
     temperature: 0.4
   });
+}
+
+async function synthesizeWithBuiltInSearch(messages: ChatMessage[], planner: PlannerOutput, toolResults: ToolResult[]) {
+  const system = `You are a Grok-like assistant with xAI built-in web_search and x_search enabled.
+Use the built-in tools for current facts, xAI/Grok release status, X posts, and public claims.
+Answer in the user's language.
+Be direct and source-grounded.
+When sources disagree or evidence is weak, say so.
+Do not rely on stale model memory for current-version or release-timing claims.
+
+Planner and local tool context:
+${JSON.stringify({ planner, toolResults }, null, 2)}`;
+
+  const result = await completeTextWithBuiltInSearch({
+    model: config.grokModel,
+    system,
+    messages,
+    temperature: 0.3
+  });
+
+  const searchTrace: ToolResult = {
+    tool: 'xai_builtin_search',
+    input: {
+      tools: ['web_search', 'x_search'],
+      model: config.grokModel
+    },
+    output: JSON.stringify(result.trace, null, 2)
+  };
+
+  return { text: result.text, toolResult: searchTrace };
 }
 
 async function verify(messages: ChatMessage[], draft: string, planner: PlannerOutput, toolResults: ToolResult[]) {
@@ -105,8 +171,12 @@ If the draft is acceptable, return it unchanged under "final".`;
 export async function runConversation(messages: ChatMessage[]) {
   const planner = await plan(messages);
   const toolResults: ToolResult[] = [];
+  const wantsBuiltInSearch = planner.needs_freshness_check
+    || planner.tool_calls.some((call) => call.tool === 'web_search' || call.tool === 'x_search');
 
   for (const call of planner.tool_calls.slice(0, 4)) {
+    if (call.tool === 'web_search' || call.tool === 'x_search') continue;
+
     try {
       toolResults.push(await runTool(call.tool, call.input));
     } catch (error) {
@@ -116,6 +186,12 @@ export async function runConversation(messages: ChatMessage[]) {
         output: `Tool error: ${error instanceof Error ? error.message : String(error)}`
       });
     }
+  }
+
+  if (wantsBuiltInSearch) {
+    const searched = await synthesizeWithBuiltInSearch(messages, planner, toolResults);
+    toolResults.push(searched.toolResult);
+    return { planner, toolResults, draft: searched.text, final: searched.text };
   }
 
   const draft = await synthesize(messages, planner, toolResults);
