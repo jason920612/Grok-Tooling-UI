@@ -17,7 +17,7 @@ function render() {
     const node = template.content.firstElementChild.cloneNode(true);
     node.classList.add(message.role);
     node.querySelector('.role').textContent = message.role;
-    node.querySelector('.content').textContent = message.content;
+    node.querySelector('.content').innerHTML = renderMarkdown(message.content);
     if (message.trace) {
       const trace = document.createElement('details');
       trace.className = 'trace';
@@ -36,6 +36,80 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+}
+
+function renderInlineMarkdown(value) {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_match, label, url) => {
+      const safeUrl = escapeHtml(url);
+      return `<a href="${safeUrl}" target="_blank" rel="noreferrer">${label}</a>`;
+    });
+}
+
+function flushList(html, listItems) {
+  if (listItems.length === 0) return;
+  html.push(`<ul>${listItems.map((item) => `<li>${item}</li>`).join('')}</ul>`);
+  listItems.length = 0;
+}
+
+function renderMarkdown(markdown) {
+  const html = [];
+  const listItems = [];
+  const lines = markdown.split('\n');
+  let inCodeBlock = false;
+  let codeLines = [];
+
+  for (const line of lines) {
+    if (line.trim().startsWith('```')) {
+      if (inCodeBlock) {
+        html.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+        codeLines = [];
+        inCodeBlock = false;
+      } else {
+        flushList(html, listItems);
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushList(html, listItems);
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushList(html, listItems);
+      const level = heading[1].length + 1;
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const listItem = trimmed.match(/^[-*]\s+(.+)$/);
+    if (listItem) {
+      listItems.push(renderInlineMarkdown(listItem[1]));
+      continue;
+    }
+
+    flushList(html, listItems);
+    html.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
+  }
+
+  if (inCodeBlock) {
+    html.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+  }
+  flushList(html, listItems);
+
+  return html.join('');
 }
 
 form.addEventListener('submit', async (event) => {
