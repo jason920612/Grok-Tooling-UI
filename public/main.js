@@ -117,11 +117,36 @@ function renderTraceList(items, emptyText) {
   return `<ul>${items.map((item) => `<li>${renderInlineMarkdown(String(item))}</li>`).join('')}</ul>`;
 }
 
+function getClientContext() {
+  const now = new Date();
+  return {
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    locale: navigator.language,
+    local_time: now.toISOString(),
+    local_time_display: now.toString(),
+    utc_offset_minutes: -now.getTimezoneOffset()
+  };
+}
+
+function renderWorkPlan(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return '<p class="trace-muted">No work plan was returned.</p>';
+  }
+
+  return `<ol class="work-plan">${items.map((item) => `
+    <li class="${String(item.status || 'pending') === 'checked' ? 'checked' : 'pending'}">
+      <strong>${renderInlineMarkdown(String(item.step || 'Untitled step'))}</strong>
+      ${item.note ? `<span>${renderInlineMarkdown(String(item.note))}</span>` : ''}
+    </li>
+  `).join('')}</ol>`;
+}
+
 function createReasoningTracePanel(trace) {
   const planner = trace.planner || {};
   const reasoningTrace = planner.reasoning_trace || {};
   const skills = Array.isArray(planner.selected_skills) ? planner.selected_skills : [];
   const toolResults = Array.isArray(trace.toolResults) ? trace.toolResults : [];
+  const clientContext = trace.clientContext || {};
 
   const details = document.createElement('details');
   details.className = 'trace reasoning-trace';
@@ -147,6 +172,19 @@ function createReasoningTracePanel(trace) {
       <section>
         <h3>Detected task type</h3>
         <p>${renderInlineMarkdown(String(planner.task_type || 'general'))}</p>
+      </section>
+      <section>
+        <h3>Reasoning mode</h3>
+        <p>${renderInlineMarkdown(String(planner.reasoning_mode || 'normal'))}</p>
+      </section>
+      <section>
+        <h3>Client time context</h3>
+        <p>${renderInlineMarkdown(String(clientContext.local_time_display || clientContext.local_time || 'Not provided'))}</p>
+        <p class="trace-muted">${renderInlineMarkdown(String(clientContext.timezone || 'unknown timezone'))}</p>
+      </section>
+      <section>
+        <h3>Checked work plan</h3>
+        ${renderWorkPlan(planner.reasoning_work_plan)}
       </section>
       <section>
         <h3>Selected thinking skills</h3>
@@ -200,10 +238,12 @@ form.addEventListener('submit', async (event) => {
   render();
 
   try {
+    const clientContext = getClientContext();
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        client_context: clientContext,
         messages: messages
           .filter((message) => !message.trace && message.content !== 'Thinking with tools...')
           .map(({ role, content }) => ({ role, content }))
@@ -216,6 +256,7 @@ form.addEventListener('submit', async (event) => {
     pending.content = data.final || data.draft || 'No answer returned.';
     pending.trace = {
       planner: data.planner,
+      clientContext: data.clientContext || clientContext,
       toolResults: data.toolResults,
       draft: data.draft
     };
