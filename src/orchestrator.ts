@@ -6,6 +6,12 @@ import { formatSelectedSkillSops, formatSkillIndexForPlanner, hydrateSelectedSki
 
 const PlannerSchema = z.object({
   task_type: z.string().default('general'),
+  reasoning_mode: z.enum(['normal', 'heavy']).default('normal'),
+  reasoning_work_plan: z.array(z.object({
+    step: z.string(),
+    status: z.enum(['pending', 'checked']).default('pending'),
+    note: z.string().optional()
+  })).default([]),
   selected_skills: z.array(z.object({
     id: z.string().optional(),
     name: z.string(),
@@ -39,6 +45,129 @@ const PlannerSchema = z.object({
 });
 
 type PlannerOutput = z.infer<typeof PlannerSchema>;
+type ReasoningWorkPlanItem = PlannerOutput['reasoning_work_plan'][number];
+
+export type ClientContext = {
+  timezone?: string;
+  locale?: string;
+  local_time?: string;
+  local_time_display?: string;
+  utc_offset_minutes?: number;
+};
+
+function formatClientContext(clientContext?: ClientContext) {
+  if (!clientContext) {
+    return 'Client context was not provided. Use server-side absolute dates when needed.';
+  }
+
+  return [
+    `timezone=${clientContext.timezone || 'unknown'}`,
+    `locale=${clientContext.locale || 'unknown'}`,
+    `local_time=${clientContext.local_time || 'unknown'}`,
+    `local_time_display=${clientContext.local_time_display || 'unknown'}`,
+    `utc_offset_minutes=${typeof clientContext.utc_offset_minutes === 'number' ? clientContext.utc_offset_minutes : 'unknown'}`
+  ].join('\n');
+}
+
+function classifyReasoningMode(lastUserMessage: string, asksForCurrentInfo: boolean, asksForImplementation: boolean) {
+  const looksComplex = /比較|分析|架構|方案|部署|部屬|審查|review|verify|驗證|trace|tool|source|policy|issue|pr|github|ci|architecture|compare|debug|investigate/i.test(lastUserMessage);
+  return asksForCurrentInfo || asksForImplementation || looksComplex ? 'heavy' : 'normal';
+}
+
+function defaultWorkPlan(mode: 'normal' | 'heavy', taskType: string, needsFreshnessCheck: boolean): ReasoningWorkPlanItem[] {
+  if (mode === 'normal') {
+    return [
+      {
+        step: 'Check the user request and answer constraints.',
+        status: 'pending'
+      },
+      {
+        step: 'Answer with concise caveats when needed.',
+        status: 'pending'
+      }
+    ];
+  }
+
+  const steps: ReasoningWorkPlanItem[] = [
+    {
+      step: 'Clarify the task, user claims, and risk level.',
+      status: 'pending'
+    },
+    {
+      step: 'Select the relevant Markdown-backed skill SOPs.',
+      status: 'pending'
+    }
+  ];
+
+  if (needsFreshnessCheck) {
+    steps.push({
+      step: 'Run or request fresh source checks before relying on current facts.',
+      status: 'pending'
+    });
+  }
+
+  if (taskType === 'implementation') {
+    steps.push({
+      step: 'Inspect affected code paths and implement the minimal scoped change.',
+      status: 'pending'
+    });
+    steps.push({
+      step: 'Run deterministic validation and summarize any remaining risk.',
+      status: 'pending'
+    });
+  } else {
+    steps.push({
+      step: 'Compare evidence strength and identify uncertainty.',
+      status: 'pending'
+    });
+    steps.push({
+      step: 'Synthesize the final answer from checked evidence and notes.',
+      status: 'pending'
+    });
+  }
+
+  return steps;
+}
+
+function completeWorkPlan(planner: PlannerOutput, toolResults: ToolResult[], finalAnswer?: string): PlannerOutput {
+  const workPlan = planner.reasoning_work_plan.length
+    ? planner.reasoning_work_plan
+    : defaultWorkPlan(planner.reasoning_mode, planner.task_type, planner.needs_freshness_check);
+
+  const checkedPlan = workPlan.map((item, index) => {
+    const existingNote = item.note?.trim();
+    let note = existingNote;
+
+    if (!note) {
+      if (/fresh|source|tool|web|x_search|current/i.test(item.step)) {
+        note = toolResults.length
+          ? `Checked ${toolResults.map((result) => result.tool).join(', ')} output before answering.`
+          : 'No external tool output was available for this step.';
+      } else if (/skill|SOP/i.test(item.step)) {
+        note = planner.selected_skills.length
+          ? `Loaded ${planner.selected_skills.length} selected skill SOP(s) from Markdown.`
+          : 'No specific skill SOP was selected.';
+      } else if (index === workPlan.length - 1) {
+        note = finalAnswer
+          ? `Final answer generated from planner constraints, tool results, and checked notes.`
+          : 'Prepared final answer constraints.';
+      } else {
+        note = 'Checked and summarized for the final response.';
+      }
+    }
+
+    return {
+      ...item,
+      status: 'checked' as const,
+      note
+    };
+  });
+
+  return {
+    ...planner,
+    reasoning_work_plan: checkedPlan
+  };
+}
 
 function extractJson(text: string) {
   const fenced = text.match(/```json\s*([\s\S]*?)```/i);
@@ -53,6 +182,8 @@ function fallbackPlan(messages: ChatMessage[], reason: string): PlannerOutput {
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
   const asksForCurrentInfo = /最新|目前|現在|跳票|延期|發布|發佈|上市|進度|何時|today|current|latest|version|release|launch|delay|delayed|roadmap|build|grok|xai|elon|musk|fsd/i.test(lastUserMessage);
   const asksForImplementation = /code|coding|implement|build|github|issue|pr|bug|fix|refactor|程式|實作|修正|開發/i.test(lastUserMessage);
+  const taskType = asksForCurrentInfo ? 'current_fact_check' : asksForImplementation ? 'implementation' : 'general';
+  const reasoningMode = classifyReasoningMode(lastUserMessage, asksForCurrentInfo, asksForImplementation);
   const selectedSkills = asksForCurrentInfo
     ? [
         {
@@ -88,7 +219,9 @@ function fallbackPlan(messages: ChatMessage[], reason: string): PlannerOutput {
         ];
 
   return {
-    task_type: asksForCurrentInfo ? 'current_fact_check' : asksForImplementation ? 'implementation' : 'general',
+    task_type: taskType,
+    reasoning_mode: reasoningMode,
+    reasoning_work_plan: defaultWorkPlan(reasoningMode, taskType, asksForCurrentInfo),
     selected_skills: hydrateSelectedSkills(selectedSkills),
     reasoning_trace: {
       summary: asksForCurrentInfo
@@ -110,8 +243,14 @@ function fallbackPlan(messages: ChatMessage[], reason: string): PlannerOutput {
     user_claims_to_verify: [],
     tool_calls: asksForCurrentInfo
       ? [
-          { tool: 'web_search', input: { query: lastUserMessage } },
-          { tool: 'x_search', input: { query: lastUserMessage } }
+          {
+            tool: 'web_search',
+            input: { query: lastUserMessage }
+          },
+          {
+            tool: 'x_search',
+            input: { query: lastUserMessage }
+          }
         ]
       : [],
     source_policy: asksForCurrentInfo
@@ -123,11 +262,13 @@ function fallbackPlan(messages: ChatMessage[], reason: string): PlannerOutput {
   };
 }
 
-async function plan(messages: ChatMessage[]): Promise<PlannerOutput> {
+async function plan(messages: ChatMessage[], clientContext?: ClientContext): Promise<PlannerOutput> {
   const system = `You are an epistemic planner for a Grok-powered assistant.
 Return JSON only, matching this shape:
 {
   "task_type": string,
+  "reasoning_mode": "normal" | "heavy",
+  "reasoning_work_plan": [{"step": string, "status": "pending", "note": string}],
   "selected_skills": [{"id": string, "name": string, "reason": string}],
   "reasoning_trace": {
     "summary": string,
@@ -147,17 +288,23 @@ Return JSON only, matching this shape:
 Available tools:
 ${toolCatalog.map((tool) => `- ${tool.name}: ${tool.description}`).join('\n')}
 
-Thinking skill index:
+Client context to pass into every model step:
+${formatClientContext(clientContext)}
+
+Thinking skill catalog:
 ${formatSkillIndexForPlanner()}
 
 Rules:
+- Use client context when interpreting today, yesterday, tomorrow, deadlines, and current local dates.
+- Set reasoning_mode to "heavy" for multi-step implementation, PR/GitHub work, high uncertainty, current facts, source verification, or complex comparisons. Use "normal" for simple direct answers.
+- For heavy mode, create a user-facing todo checklist in reasoning_work_plan. Each item must be a concise observable step with status "pending"; do not include private chain-of-thought.
+- For normal mode, keep reasoning_work_plan to one or two concise summary steps.
 - If the user asks about current facts, model names, prices, laws, news, API behavior, people, companies, or release status, mark needs_freshness_check true.
 - Treat user claims as fallible; list any premise that affects the answer.
 - X posts, social replies, and prior AI answers are weak evidence.
 - Prefer official docs, primary sources, source documents, deterministic computation, and executable checks.
 - Use both web_search and x_search for questions about xAI, Grok, Elon Musk statements, X posts, release timing, current versions, or launch delays.
-- Select one to three thinking skills from the index by id. Pick skills that fit the actual request; do not use a fixed SOP for every question.
-- The detailed SOP for each selected skill is stored in a separate Markdown file and will be loaded after selection. Do not invent SOP text in planner output.
+- Select one to three thinking skills from the catalog by id. Pick skills that fit the actual request; do not use a fixed SOP for every question.
 - reasoning_trace must be concise and user-facing. Do not expose private chain-of-thought.
 - Label X access as social / primary statement / public discourse / weak factual evidence depending on context. Do not restrict X access to an allowlist.
 - Keep tool calls minimal and useful.`;
@@ -174,7 +321,10 @@ Rules:
     const planner = PlannerSchema.parse(JSON.parse(extractJson(raw)));
     return {
       ...planner,
-      selected_skills: hydrateSelectedSkills(planner.selected_skills)
+      selected_skills: hydrateSelectedSkills(planner.selected_skills),
+      reasoning_work_plan: planner.reasoning_work_plan.length
+        ? planner.reasoning_work_plan
+        : defaultWorkPlan(planner.reasoning_mode, planner.task_type, planner.needs_freshness_check)
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -182,13 +332,18 @@ Rules:
   }
 }
 
-async function synthesize(messages: ChatMessage[], planner: PlannerOutput, toolResults: ToolResult[]) {
+async function synthesize(messages: ChatMessage[], planner: PlannerOutput, toolResults: ToolResult[], clientContext?: ClientContext) {
   const selectedSkillSops = formatSelectedSkillSops(planner.selected_skills);
   const system = `You are a Grok-like assistant wrapped in a verification layer.
 Be direct, sharp, and useful, but do not over-trust social content.
 Use the planner constraints and tool results.
 When evidence is weak, say so.
 Do not claim that a tool verified something unless the tool output supports it.
+Use the client context for all relative-date and timezone-sensitive interpretation.
+Do not expose private chain-of-thought; use only concise user-facing summaries.
+
+Client context:
+${formatClientContext(clientContext)}
 
 Selected skill SOPs:
 ${selectedSkillSops || 'No detailed skill SOP was selected.'}`;
@@ -207,7 +362,7 @@ ${selectedSkillSops || 'No detailed skill SOP was selected.'}`;
   });
 }
 
-async function synthesizeWithBuiltInSearch(messages: ChatMessage[], planner: PlannerOutput, toolResults: ToolResult[]) {
+async function synthesizeWithBuiltInSearch(messages: ChatMessage[], planner: PlannerOutput, toolResults: ToolResult[], clientContext?: ClientContext) {
   const selectedSkillSops = formatSelectedSkillSops(planner.selected_skills);
   const system = `You are a Grok-like assistant with xAI built-in web_search and x_search enabled.
 Use the built-in tools for current facts, xAI/Grok release status, X posts, and public claims.
@@ -215,6 +370,11 @@ Answer in the user's language.
 Be direct and source-grounded.
 When sources disagree or evidence is weak, say so.
 Do not rely on stale model memory for current-version or release-timing claims.
+Use the client context for all relative-date and timezone-sensitive interpretation.
+Do not expose private chain-of-thought; use only concise user-facing summaries.
+
+Client context:
+${formatClientContext(clientContext)}
 
 Selected skill SOPs:
 ${selectedSkillSops || 'No detailed skill SOP was selected.'}
@@ -241,13 +401,14 @@ ${JSON.stringify({ planner, toolResults }, null, 2)}`;
   return { text: result.text, toolResult: searchTrace };
 }
 
-async function verify(messages: ChatMessage[], draft: string, planner: PlannerOutput, toolResults: ToolResult[]) {
+async function verify(messages: ChatMessage[], draft: string, planner: PlannerOutput, toolResults: ToolResult[], clientContext?: ClientContext) {
   const system = `You are a strict verifier. Return a concise critique plus a corrected final answer if needed.
 Check:
 - Did the answer overstate evidence?
 - Did it ignore freshness/user-premise risk?
 - Did it cite or imply authority from weak sources?
 - Did it fail to use deterministic tool output?
+- Did it respect the user's client timezone and local time when relative dates matter?
 If the draft is acceptable, return it unchanged under "final".`;
 
   return completeText({
@@ -257,15 +418,15 @@ If the draft is acceptable, return it unchanged under "final".`;
       ...messages,
       {
         role: 'system',
-        content: JSON.stringify({ draft, planner, toolResults }, null, 2)
+        content: JSON.stringify({ draft, planner, toolResults, clientContext }, null, 2)
       }
     ],
     temperature: 0
   });
 }
 
-export async function runConversation(messages: ChatMessage[]) {
-  const planner = await plan(messages);
+export async function runConversation(messages: ChatMessage[], clientContext?: ClientContext) {
+  let planner = await plan(messages, clientContext);
   const toolResults: ToolResult[] = [];
   const wantsBuiltInSearch = planner.needs_freshness_check
     || planner.tool_calls.some((call) => call.tool === 'web_search' || call.tool === 'x_search');
@@ -285,13 +446,15 @@ export async function runConversation(messages: ChatMessage[]) {
   }
 
   if (wantsBuiltInSearch) {
-    const searched = await synthesizeWithBuiltInSearch(messages, planner, toolResults);
+    const searched = await synthesizeWithBuiltInSearch(messages, planner, toolResults, clientContext);
     toolResults.push(searched.toolResult);
-    return { planner, toolResults, draft: searched.text, final: searched.text };
+    planner = completeWorkPlan(planner, toolResults, searched.text);
+    return { planner, clientContext, toolResults, draft: searched.text, final: searched.text };
   }
 
-  const draft = await synthesize(messages, planner, toolResults);
-  const final = await verify(messages, draft, planner, toolResults);
+  const draft = await synthesize(messages, planner, toolResults, clientContext);
+  const final = await verify(messages, draft, planner, toolResults, clientContext);
+  planner = completeWorkPlan(planner, toolResults, final);
 
-  return { planner, toolResults, draft, final };
+  return { planner, clientContext, toolResults, draft, final };
 }
