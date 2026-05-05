@@ -132,6 +132,7 @@ function createReasoningTracePanel(trace) {
         <li>
           <strong>${escapeHtml(String(skill.name || 'Unknown skill'))}</strong>
           <span>${renderInlineMarkdown(String(skill.reason || 'Selected by planner.'))}</span>
+          ${skill.sop ? `<details class="skill-sop"><summary>SOP</summary>${renderMarkdown(String(skill.sop))}</details>` : ''}
         </li>
       `).join('')
     : '<li><strong>Planner fallback</strong><span>No explicit skill selection was returned.</span></li>';
