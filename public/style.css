@@ -9,11 +9,19 @@
 body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top left, #2a2a2a, #050505 45%); }
 button, textarea { font: inherit; }
 
-.app { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
-.sidebar { border-right: 1px solid #27272a; padding: 28px; background: rgba(10, 10, 10, 0.72); }
+.app { display: grid; grid-template-columns: 280px minmax(420px, 1fr) 420px; min-height: 100vh; }
+.sidebar { border-right: 1px solid #27272a; padding: 28px; background: rgba(10, 10, 10, 0.72); overflow: auto; }
 .brand { font-size: 22px; font-weight: 800; margin-bottom: 16px; }
 .sidebar p { color: #a1a1aa; line-height: 1.6; }
 .pill { display: inline-flex; margin: 8px 8px 0 0; padding: 8px 10px; border: 1px solid #3f3f46; border-radius: 999px; color: #d4d4d8; }
+.history-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 28px; }
+.history-header h2 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; }
+.history-header button, .thread-item, .artifact-item button { border: 1px solid #3f3f46; border-radius: 8px; padding: 8px 10px; color: #fafafa; background: #18181b; cursor: pointer; }
+.thread-list { display: grid; gap: 8px; margin-top: 12px; }
+.thread-item { width: 100%; display: grid; gap: 4px; text-align: left; }
+.thread-item.active { border-color: #93c5fd; background: #111827; }
+.thread-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-item span { color: #71717a; font-size: 12px; }
 
 .chat-shell { display: flex; flex-direction: column; min-width: 0; }
 header { display: flex; justify-content: space-between; align-items: center; padding: 24px 32px; border-bottom: 1px solid #27272a; }
@@ -68,9 +76,38 @@ header p { margin: 6px 0 0; color: #a1a1aa; }
 textarea { resize: none; border: 1px solid #3f3f46; border-radius: 16px; padding: 14px; background: #09090b; color: #fafafa; outline: none; }
 .composer button { border: 0; border-radius: 16px; padding: 0 22px; background: #fafafa; color: #09090b; font-weight: 800; cursor: pointer; }
 
+.studio-shell { display: flex; flex-direction: column; min-width: 0; border-left: 1px solid #27272a; background: rgba(9, 9, 11, 0.78); }
+.studio-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 24px; border-bottom: 1px solid #27272a; }
+.studio-header h2 { margin: 0; font-size: 20px; }
+.studio-header p { margin: 5px 0 0; color: #a1a1aa; }
+.studio-header select { border: 1px solid #3f3f46; border-radius: 8px; padding: 8px 10px; background: #09090b; color: #fafafa; }
+.studio-policy { display: grid; gap: 4px; padding: 14px 24px; border-bottom: 1px solid #27272a; color: #a1a1aa; font-size: 13px; overflow-wrap: anywhere; }
+.studio-policy strong { color: #fafafa; }
+.studio-code { flex: 0 0 220px; margin: 16px 24px 0; border-radius: 10px; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; line-height: 1.5; }
+.studio-actions { display: flex; gap: 10px; padding: 12px 24px; }
+.studio-actions button { border: 0; border-radius: 10px; padding: 10px 12px; background: #fafafa; color: #09090b; font-weight: 800; cursor: pointer; }
+.studio-actions button + button { border: 1px solid #3f3f46; background: #18181b; color: #fafafa; }
+.studio-status { min-height: 20px; padding: 0 24px 12px; color: #a1a1aa; font-size: 13px; }
+.studio-status.ok { color: #86efac; }
+.studio-status.error { color: #fca5a5; }
+.studio-preview { flex: 1; min-height: 240px; margin: 0 24px 16px; border: 1px solid #3f3f46; border-radius: 10px; background: #fff; }
+.artifacts { border-top: 1px solid #27272a; padding: 16px 24px 24px; }
+.artifacts h3 { margin: 0 0 12px; color: #fafafa; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.artifact-list { display: grid; gap: 8px; }
+.artifact-item { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; color: #d4d4d8; font-size: 13px; }
+.artifact-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 1180px) {
+  .app { grid-template-columns: 260px 1fr; }
+  .studio-shell { grid-column: 1 / -1; border-left: 0; border-top: 1px solid #27272a; }
+}
+
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   header, .messages, .composer { padding-left: 16px; padding-right: 16px; }
   .trace-grid { grid-template-columns: 1fr; }
+  .studio-shell { grid-column: auto; }
+  .studio-header, .studio-policy, .studio-actions, .artifacts { padding-left: 16px; padding-right: 16px; }
+  .studio-code, .studio-preview { margin-left: 16px; margin-right: 16px; }
 }

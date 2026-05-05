@@ -14,6 +14,11 @@
         <div class="pill">Node + TypeScript</div>
         <div class="pill">Planner first</div>
         <div class="pill">Tool traces</div>
+        <div class="history-header">
+          <h2>History</h2>
+          <button id="new-thread" type="button">New</button>
+        </div>
+        <div id="thread-list" class="thread-list"></div>
       </aside>
 
       <section class="chat-shell">
@@ -32,6 +37,40 @@
           <button type="submit">Send</button>
         </form>
       </section>
+
+      <aside class="studio-shell">
+        <header class="studio-header">
+          <div>
+            <h2>Studio</h2>
+            <p>Frontend-only sandbox</p>
+          </div>
+          <select id="studio-language" aria-label="Studio language">
+            <option value="html">HTML</option>
+            <option value="javascript">JavaScript</option>
+            <option value="css">CSS</option>
+          </select>
+        </header>
+
+        <div class="studio-policy">
+          <strong>Sandbox:</strong>
+          <span id="workspace-path"></span>
+        </div>
+
+        <textarea id="studio-code" class="studio-code" spellcheck="false"></textarea>
+
+        <div class="studio-actions">
+          <button id="run-studio" type="button">Run</button>
+          <button id="save-artifact" type="button">Save artifact</button>
+        </div>
+
+        <div id="studio-status" class="studio-status"></div>
+        <iframe id="studio-preview" class="studio-preview" sandbox="allow-scripts"></iframe>
+
+        <section class="artifacts">
+          <h3>Persistent files</h3>
+          <div id="artifact-list" class="artifact-list"></div>
+        </section>
+      </aside>
     </main>
 
     <template id="message-template">
