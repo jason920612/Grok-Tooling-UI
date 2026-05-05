@@ -1,0 +1,39 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #050505;
+  color: #f4f4f5;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top left, #2a2a2a, #050505 45%); }
+button, textarea { font: inherit; }
+
+.app { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+.sidebar { border-right: 1px solid #27272a; padding: 28px; background: rgba(10, 10, 10, 0.72); }
+.brand { font-size: 22px; font-weight: 800; margin-bottom: 16px; }
+.sidebar p { color: #a1a1aa; line-height: 1.6; }
+.pill { display: inline-flex; margin: 8px 8px 0 0; padding: 8px 10px; border: 1px solid #3f3f46; border-radius: 999px; color: #d4d4d8; }
+
+.chat-shell { display: flex; flex-direction: column; min-width: 0; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 24px 32px; border-bottom: 1px solid #27272a; }
+h1 { margin: 0; font-size: 24px; }
+header p { margin: 6px 0 0; color: #a1a1aa; }
+#clear { border: 1px solid #3f3f46; border-radius: 12px; padding: 10px 14px; color: #fafafa; background: #18181b; cursor: pointer; }
+
+.messages { flex: 1; overflow: auto; padding: 28px 32px; display: flex; flex-direction: column; gap: 16px; }
+.message { max-width: 900px; border: 1px solid #27272a; border-radius: 18px; padding: 16px; background: rgba(24, 24, 27, 0.72); box-shadow: 0 20px 60px rgba(0,0,0,0.25); }
+.message.user { align-self: flex-end; background: rgba(39, 39, 42, 0.92); }
+.role { color: #a1a1aa; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; }
+.content { white-space: pre-wrap; line-height: 1.65; }
+.trace { margin-top: 14px; padding-top: 14px; border-top: 1px solid #3f3f46; color: #a1a1aa; font-size: 13px; }
+
+.composer { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 20px 32px 28px; border-top: 1px solid #27272a; }
+textarea { resize: none; border: 1px solid #3f3f46; border-radius: 16px; padding: 14px; background: #09090b; color: #fafafa; outline: none; }
+.composer button { border: 0; border-radius: 16px; padding: 0 22px; background: #fafafa; color: #09090b; font-weight: 800; cursor: pointer; }
+
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  header, .messages, .composer { padding-left: 16px; padding-right: 16px; }
+}
