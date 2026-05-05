@@ -1,7 +1,17 @@
+import { runEphemeralPython } from './pythonExecutor.js';
+import { runXaiCodeExecution } from './xaiCodeExecution.js';
+
 export type ToolResult = {
   tool: string;
   input: unknown;
   output: string;
+  artifacts?: Array<{
+    name: string;
+    size: number;
+    mime: string;
+    previewable: boolean;
+    content_base64: string;
+  }>;
 };
 
 type Token =
@@ -158,6 +168,27 @@ export async function runTool(name: string, input: unknown): Promise<ToolResult>
     };
   }
 
+  if (name === 'code_execution') {
+    const result = await runXaiCodeExecution(input);
+    return {
+      tool: name,
+      input,
+      output: result.text,
+      artifacts: result.artifacts
+    };
+  }
+
+  if (name === 'python_execution') {
+    const result = await runEphemeralPython(input);
+    const { artifacts, ...summary } = result;
+    return {
+      tool: name,
+      input,
+      output: JSON.stringify(summary, null, 2),
+      artifacts
+    };
+  }
+
   throw new Error(`Unknown tool: ${name}`);
 }
 
@@ -181,5 +212,13 @@ export const toolCatalog = [
   {
     name: 'x_search',
     description: 'Use xAI built-in x_search server-side tool for current X posts, xAI/Grok announcements, and public social claims.'
+  },
+  {
+    name: 'code_execution',
+    description: 'Use xAI built-in code_interpreter for no-network Python calculations, data analysis, and code verification. This runs server-side at xAI in a stateless isolated environment.'
+  },
+  {
+    name: 'python_execution',
+    description: 'Run Python locally only when network or pip packages are required. Input: {code: string, packages?: string[]}. Uses a one-run virtualenv, allows pip install only inside that env, deletes it after execution, limits wall time to 60s, CPU to 30s, memory to 512MB, and output files to 60MB.'
   }
 ] as const;
