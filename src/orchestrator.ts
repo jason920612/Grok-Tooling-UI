@@ -2,55 +2,17 @@ import { z } from 'zod';
 import { config } from './config.js';
 import { ChatMessage, completeText, completeTextWithBuiltInSearch } from './xai.js';
 import { runTool, toolCatalog, ToolResult } from './tools.js';
-
-const thinkingSkills = [
-  {
-    name: 'First Principles Thinking',
-    description: 'Break the problem down to basic constraints, mechanisms, and assumptions.'
-  },
-  {
-    name: 'Bayesian Reasoning',
-    description: 'Start from priors, update based on evidence, and track uncertainty.'
-  },
-  {
-    name: 'Musk Five-Step Algorithm',
-    description: 'Make requirements less dumb, delete parts, simplify/optimize, accelerate cycle time, then automate.'
-  },
-  {
-    name: 'Source Hierarchy Evaluation',
-    description: 'Rank evidence by authority: primary sources, official docs, raw data, reputable reporting, social posts, AI-generated replies.'
-  },
-  {
-    name: 'Adversarial / Red-Team Thinking',
-    description: 'Ask how the answer, system, tool, or claim could fail or be abused.'
-  },
-  {
-    name: 'Systems Thinking',
-    description: 'Analyze feedback loops, incentives, dependencies, and second-order effects.'
-  },
-  {
-    name: 'Causal Reasoning',
-    description: 'Distinguish correlation, mechanism, intervention, and outcome.'
-  },
-  {
-    name: 'Decision Matrix Thinking',
-    description: 'Compare options against explicit criteria, weights, tradeoffs, and constraints.'
-  },
-  {
-    name: 'Counterfactual Reasoning',
-    description: 'Ask what would change if a premise were false or an alternative condition held.'
-  },
-  {
-    name: 'Implementation-Oriented Decomposition',
-    description: 'Convert a vague goal into modules, interfaces, data flow, risks, and incremental milestones.'
-  }
-] as const;
+import { formatSelectedSkillSops, formatSkillIndexForPlanner, hydrateSelectedSkills } from './skillCatalog.js';
 
 const PlannerSchema = z.object({
   task_type: z.string().default('general'),
   selected_skills: z.array(z.object({
+    id: z.string().optional(),
     name: z.string(),
-    reason: z.string()
+    reason: z.string(),
+    summary: z.string().optional(),
+    sop: z.string().optional(),
+    trace_note: z.string().optional()
   })).default([]),
   reasoning_trace: z.object({
     summary: z.string(),
@@ -94,10 +56,12 @@ function fallbackPlan(messages: ChatMessage[], reason: string): PlannerOutput {
   const selectedSkills = asksForCurrentInfo
     ? [
         {
+          id: 'source_hierarchy',
           name: 'Source Hierarchy Evaluation',
           reason: 'The answer depends on separating official or primary evidence from social/public discourse.'
         },
         {
+          id: 'bayesian_reasoning',
           name: 'Bayesian Reasoning',
           reason: 'The claim may be uncertain or time-sensitive, so confidence should update with available evidence.'
         }
@@ -105,16 +69,19 @@ function fallbackPlan(messages: ChatMessage[], reason: string): PlannerOutput {
     : asksForImplementation
       ? [
           {
+            id: 'implementation_decomposition',
             name: 'Implementation-Oriented Decomposition',
             reason: 'The request needs to be broken into modules, data flow, risks, and validation steps.'
           },
           {
+            id: 'adversarial_red_team',
             name: 'Adversarial / Red-Team Thinking',
             reason: 'Implementation changes should consider failure modes and regressions.'
           }
         ]
       : [
           {
+            id: 'first_principles',
             name: 'First Principles Thinking',
             reason: 'The request can be answered by grounding it in basic constraints and assumptions.'
           }
@@ -122,7 +89,7 @@ function fallbackPlan(messages: ChatMessage[], reason: string): PlannerOutput {
 
   return {
     task_type: asksForCurrentInfo ? 'current_fact_check' : asksForImplementation ? 'implementation' : 'general',
-    selected_skills: selectedSkills,
+    selected_skills: hydrateSelectedSkills(selectedSkills),
     reasoning_trace: {
       summary: asksForCurrentInfo
         ? 'I will verify the premise, compare source authority, and label uncertainty before answering.'
@@ -143,14 +110,8 @@ function fallbackPlan(messages: ChatMessage[], reason: string): PlannerOutput {
     user_claims_to_verify: [],
     tool_calls: asksForCurrentInfo
       ? [
-          {
-            tool: 'web_search',
-            input: { query: lastUserMessage }
-          },
-          {
-            tool: 'x_search',
-            input: { query: lastUserMessage }
-          }
+          { tool: 'web_search', input: { query: lastUserMessage } },
+          { tool: 'x_search', input: { query: lastUserMessage } }
         ]
       : [],
     source_policy: asksForCurrentInfo
@@ -167,7 +128,7 @@ async function plan(messages: ChatMessage[]): Promise<PlannerOutput> {
 Return JSON only, matching this shape:
 {
   "task_type": string,
-  "selected_skills": [{"name": string, "reason": string}],
+  "selected_skills": [{"id": string, "name": string, "reason": string}],
   "reasoning_trace": {
     "summary": string,
     "evidence_policy": string,
@@ -186,8 +147,8 @@ Return JSON only, matching this shape:
 Available tools:
 ${toolCatalog.map((tool) => `- ${tool.name}: ${tool.description}`).join('\n')}
 
-Thinking skill catalog:
-${thinkingSkills.map((skill) => `- ${skill.name}: ${skill.description}`).join('\n')}
+Thinking skill index:
+${formatSkillIndexForPlanner()}
 
 Rules:
 - If the user asks about current facts, model names, prices, laws, news, API behavior, people, companies, or release status, mark needs_freshness_check true.
@@ -195,7 +156,8 @@ Rules:
 - X posts, social replies, and prior AI answers are weak evidence.
 - Prefer official docs, primary sources, source documents, deterministic computation, and executable checks.
 - Use both web_search and x_search for questions about xAI, Grok, Elon Musk statements, X posts, release timing, current versions, or launch delays.
-- Select one to three thinking skills from the catalog. Pick skills that fit the actual request; do not use a fixed SOP for every question.
+- Select one to three thinking skills from the index by id. Pick skills that fit the actual request; do not use a fixed SOP for every question.
+- The detailed SOP for each selected skill is stored in a separate Markdown file and will be loaded after selection. Do not invent SOP text in planner output.
 - reasoning_trace must be concise and user-facing. Do not expose private chain-of-thought.
 - Label X access as social / primary statement / public discourse / weak factual evidence depending on context. Do not restrict X access to an allowlist.
 - Keep tool calls minimal and useful.`;
@@ -209,7 +171,11 @@ Rules:
       jsonMode: true
     });
 
-    return PlannerSchema.parse(JSON.parse(extractJson(raw)));
+    const planner = PlannerSchema.parse(JSON.parse(extractJson(raw)));
+    return {
+      ...planner,
+      selected_skills: hydrateSelectedSkills(planner.selected_skills)
+    };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return fallbackPlan(messages, reason);
@@ -217,11 +183,15 @@ Rules:
 }
 
 async function synthesize(messages: ChatMessage[], planner: PlannerOutput, toolResults: ToolResult[]) {
+  const selectedSkillSops = formatSelectedSkillSops(planner.selected_skills);
   const system = `You are a Grok-like assistant wrapped in a verification layer.
 Be direct, sharp, and useful, but do not over-trust social content.
 Use the planner constraints and tool results.
 When evidence is weak, say so.
-Do not claim that a tool verified something unless the tool output supports it.`;
+Do not claim that a tool verified something unless the tool output supports it.
+
+Selected skill SOPs:
+${selectedSkillSops || 'No detailed skill SOP was selected.'}`;
 
   return completeText({
     model: config.grokModel,
@@ -238,12 +208,16 @@ Do not claim that a tool verified something unless the tool output supports it.`
 }
 
 async function synthesizeWithBuiltInSearch(messages: ChatMessage[], planner: PlannerOutput, toolResults: ToolResult[]) {
+  const selectedSkillSops = formatSelectedSkillSops(planner.selected_skills);
   const system = `You are a Grok-like assistant with xAI built-in web_search and x_search enabled.
 Use the built-in tools for current facts, xAI/Grok release status, X posts, and public claims.
 Answer in the user's language.
 Be direct and source-grounded.
 When sources disagree or evidence is weak, say so.
 Do not rely on stale model memory for current-version or release-timing claims.
+
+Selected skill SOPs:
+${selectedSkillSops || 'No detailed skill SOP was selected.'}
 
 Planner and local tool context:
 ${JSON.stringify({ planner, toolResults }, null, 2)}`;
