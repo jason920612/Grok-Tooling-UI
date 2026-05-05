@@ -40,6 +40,29 @@ header p { margin: 6px 0 0; color: #a1a1aa; }
 .content pre { overflow: auto; border: 1px solid #3f3f46; border-radius: 10px; padding: 12px; background: #09090b; }
 .content pre code { border: 0; padding: 0; background: transparent; }
 .trace { margin-top: 14px; padding-top: 14px; border-top: 1px solid #3f3f46; color: #a1a1aa; font-size: 13px; }
+.trace summary { cursor: pointer; color: #e4e4e7; font-weight: 700; }
+.reasoning-trace[open] > summary { margin-bottom: 12px; }
+.trace-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.trace-grid section { border: 1px solid #3f3f46; border-radius: 10px; padding: 12px; background: rgba(9, 9, 11, 0.55); }
+.trace-grid h3 { margin: 0 0 8px; color: #fafafa; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.trace-grid p, .trace-grid ul { margin: 0; }
+.trace-grid ul { padding-left: 18px; }
+.skill-list { list-style: none; padding-left: 0 !important; display: grid; gap: 8px; }
+.skill-list li { display: grid; gap: 3px; }
+.skill-list strong { color: #fafafa; }
+.skill-list span { overflow-wrap: anywhere; }
+.skill-sop { margin-top: 6px; }
+.skill-sop summary { color: #93c5fd; font-weight: 600; }
+.skill-sop p, .skill-sop ul { margin-top: 6px; }
+.work-plan { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.work-plan li { padding-left: 2px; }
+.work-plan li::marker { color: #71717a; }
+.work-plan li.checked::marker { color: #22c55e; }
+.work-plan strong { display: block; color: #fafafa; }
+.work-plan span { display: block; margin-top: 3px; overflow-wrap: anywhere; }
+.trace-muted { color: #71717a; }
+.raw-trace { grid-column: 1 / -1; margin-top: 12px; }
+.raw-trace pre { overflow: auto; max-height: 360px; border: 1px solid #3f3f46; border-radius: 10px; padding: 12px; background: #09090b; color: #d4d4d8; }
 
 .composer { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 20px 32px 28px; border-top: 1px solid #27272a; }
 textarea { resize: none; border: 1px solid #3f3f46; border-radius: 16px; padding: 14px; background: #09090b; color: #fafafa; outline: none; }
@@ -49,4 +72,5 @@ textarea { resize: none; border: 1px solid #3f3f46; border-radius: 16px; padding
   .app { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   header, .messages, .composer { padding-left: 16px; padding-right: 16px; }
+  .trace-grid { grid-template-columns: 1fr; }
 }
