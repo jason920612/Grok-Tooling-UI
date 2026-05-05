@@ -19,10 +19,7 @@ function render() {
     node.querySelector('.role').textContent = message.role;
     node.querySelector('.content').innerHTML = renderMarkdown(message.content);
     if (message.trace) {
-      const trace = document.createElement('details');
-      trace.className = 'trace';
-      trace.innerHTML = `<summary>tool / verifier trace</summary><pre>${escapeHtml(JSON.stringify(message.trace, null, 2))}</pre>`;
-      node.appendChild(trace);
+      node.appendChild(createReasoningTracePanel(message.trace));
     }
     messagesEl.appendChild(node);
   }
@@ -110,6 +107,82 @@ function renderMarkdown(markdown) {
   flushList(html, listItems);
 
   return html.join('');
+}
+
+function renderTraceList(items, emptyText) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return `<p class="trace-muted">${escapeHtml(emptyText)}</p>`;
+  }
+
+  return `<ul>${items.map((item) => `<li>${renderInlineMarkdown(String(item))}</li>`).join('')}</ul>`;
+}
+
+function createReasoningTracePanel(trace) {
+  const planner = trace.planner || {};
+  const reasoningTrace = planner.reasoning_trace || {};
+  const skills = Array.isArray(planner.selected_skills) ? planner.selected_skills : [];
+  const toolResults = Array.isArray(trace.toolResults) ? trace.toolResults : [];
+
+  const details = document.createElement('details');
+  details.className = 'trace reasoning-trace';
+  details.open = true;
+
+  const skillsHtml = skills.length
+    ? skills.map((skill) => `
+        <li>
+          <strong>${escapeHtml(String(skill.name || 'Unknown skill'))}</strong>
+          <span>${renderInlineMarkdown(String(skill.reason || 'Selected by planner.'))}</span>
+        </li>
+      `).join('')
+    : '<li><strong>Planner fallback</strong><span>No explicit skill selection was returned.</span></li>';
+
+  const toolSummary = toolResults.length
+    ? toolResults.map((result) => `<li><strong>${escapeHtml(String(result.tool))}</strong><span>${renderInlineMarkdown(String(result.output || '').slice(0, 280))}</span></li>`).join('')
+    : '<li><strong>No tools run</strong><span>The planner chose to answer without local or built-in tool output.</span></li>';
+
+  details.innerHTML = `
+    <summary>Reasoning trace</summary>
+    <div class="trace-grid">
+      <section>
+        <h3>Detected task type</h3>
+        <p>${renderInlineMarkdown(String(planner.task_type || 'general'))}</p>
+      </section>
+      <section>
+        <h3>Selected thinking skills</h3>
+        <ul class="skill-list">${skillsHtml}</ul>
+      </section>
+      <section>
+        <h3>Method note</h3>
+        <p>${renderInlineMarkdown(String(reasoningTrace.summary || 'No user-facing method note was returned.'))}</p>
+      </section>
+      <section>
+        <h3>Evidence policy</h3>
+        <p>${renderInlineMarkdown(String(reasoningTrace.evidence_policy || 'Prefer stronger sources when available.'))}</p>
+      </section>
+      <section>
+        <h3>Tools considered</h3>
+        ${renderTraceList(reasoningTrace.tools_considered, 'No tools were explicitly considered.')}
+      </section>
+      <section>
+        <h3>Sources / evidence hierarchy</h3>
+        ${renderTraceList(reasoningTrace.source_types, 'No source types were explicitly classified.')}
+      </section>
+      <section>
+        <h3>Confidence and uncertainty</h3>
+        <p>${renderInlineMarkdown(String(reasoningTrace.uncertainty || 'Uncertainty was not explicitly classified.'))}</p>
+      </section>
+      <section>
+        <h3>Tool calls</h3>
+        <ul class="skill-list">${toolSummary}</ul>
+      </section>
+    </div>
+    <details class="raw-trace">
+      <summary>Raw tool / verifier trace</summary>
+      <pre>${escapeHtml(JSON.stringify(trace, null, 2))}</pre>
+    </details>
+  `;
+
+  return details;
 }
 
 form.addEventListener('submit', async (event) => {
