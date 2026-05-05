@@ -21,6 +21,7 @@ const ChatRequestSchema = z.object({
     content: z.string().min(1)
   })).min(1),
   client_context: z.object({
+    thread_id: z.string().optional(),
     timezone: z.string().optional(),
     locale: z.string().optional(),
     local_time: z.string().optional(),
